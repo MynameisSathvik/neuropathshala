@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">NeuroPathshala</string>
+    <string name="title_activity_main">NeuroPathshala</string>
+    <string name="package_name">com.neuropathshala.app</string>
+    <string name="custom_url_scheme">com.neuropathshala.app</string>
+</resources>

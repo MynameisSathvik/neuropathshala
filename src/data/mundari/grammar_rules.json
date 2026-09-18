@@ -1,0 +1,6 @@
+[
+  {"topic":"phonology","rule":"Reference covers Mundari sound system and phonological description.","sourcePage":"grammar sections in scanned reference","confidence":"documented"},
+  {"topic":"morphology","rule":"Reference covers roots, affixation, derivation and inflection.","sourcePage":"grammar sections in scanned reference","confidence":"documented"},
+  {"topic":"syntax","rule":"Reference covers sentence structure, grammatical markers and constituent order.","sourcePage":"grammar sections in scanned reference","confidence":"documented"},
+  {"topic":"tense-aspect-mood","rule":"Reference covers tense, aspect and mood as grammatical categories.","sourcePage":"grammar sections in scanned reference","confidence":"documented"}
+]
