@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "node scripts/start-dev.mjs",
     "server": "tsx server/server.ts",
+    "process:mundari": "tsx scripts/process-mundari-corpus.ts",
     "build": "vite build",
     "preview": "vite preview",
     "test": "tsx --test tests/languageResources.test.ts tests/offlineStorage.test.ts",

@@ -7,7 +7,7 @@ import {
 } from '../types';
 import { DictionaryEntry, SANTHALI_DICTIONARY } from './dictionary';
 import { importLanguagePack } from './languagePack';
-import { HO_OFFLINE_CORE, MUNDARI_OFFLINE_CORE } from './offlineLanguageCores';
+import { HO_OFFLINE_CORE, MUNDARI_OFFLINE_CORE, MundariCorpusEntry } from './offlineLanguageCores';
 
 const existingSanthaliSource = {
   name: 'Existing PALASH MTB-MLE classroom vocabulary metadata',
@@ -114,13 +114,43 @@ const hoResource = importLanguagePack({
 });
 
 const mundariResource: LanguageResource = {
-  ...emptyResource('Mundari', 'Mundari', ['Grammar reference']),
+  ...emptyResource('Mundari', 'Mundari', [...new Set(MUNDARI_OFFLINE_CORE.classroomPhrases.map((entry) => entry.category))]),
   source: {
     name: 'Mundari Grammar, supplied scanned reference',
     reference: '870504344-Narendra-Kumar-Sinha-Mundari-Grammar-B-ok-org.pdf',
     reviewed: true
   },
-  offlineAvailable: MUNDARI_OFFLINE_CORE.grammarRules.length > 0
+  words: MUNDARI_OFFLINE_CORE.classroomPhrases.map((entry, index) => ({
+    id: `mundari-${index + 1}`,
+    language: 'Mundari' as const,
+    hindi: entry.hindi,
+    translation: entry.mundari,
+    tribalText: entry.mundari,
+    category: entry.category,
+    verificationStatus: 'verified' as const,
+    source: {
+      name: 'Karya Hindi-Mundari Translation Dataset',
+      reference: 'https://github.com/karya-inc/dataset-hindi-mundari-translation',
+      reviewed: true
+    }
+  })),
+  classroomPhrases: MUNDARI_OFFLINE_CORE.classroomPhrases.map((entry, index) => ({
+    id: `mundari-${index + 1}`,
+    language: 'Mundari' as const,
+    hindi: entry.hindi,
+    translation: entry.mundari,
+    tribalText: entry.mundari,
+    category: entry.category,
+    verificationStatus: 'verified' as const,
+    source: {
+      name: 'Karya Hindi-Mundari Translation Dataset',
+      reference: 'https://github.com/karya-inc/dataset-hindi-mundari-translation',
+      reviewed: true
+    }
+  })),
+  pronunciation: [],
+  verificationStatus: 'verified',
+  offlineAvailable: true
 };
 
 export const LANGUAGE_RESOURCES: Record<TribalLanguage, LanguageResource> = {

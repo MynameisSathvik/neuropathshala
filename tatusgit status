@@ -1,0 +1,15 @@
+warning: in the working copy of 'README.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'package.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/components/dashboard/DashboardView.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/services/translationService.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/types/index.ts', LF will be replaced by CRLF the next time Git touches it
+ README.md                                          |  6 [32m+[m[31m-[m
+ package.json                                       |  1 [32m+[m
+ .../classroom/TeacherSurvivalKitView.tsx           |  2 [32m+[m[31m-[m
+ src/components/dashboard/DashboardView.tsx         |  2 [32m+[m[31m-[m
+ src/data/languageResources.ts                      | 36 [32m++++++++++[m[31m-[m
+ src/data/offlineLanguageCores.ts                   | 28 [32m++++++++[m[31m-[m
+ src/services/translationService.ts                 | 44 [32m++++++++++++++[m
+ src/types/index.ts                                 |  8 [32m+[m[31m--[m
+ tests/languageResources.test.ts                    | 71 [32m+++++++++++++++++++[m[31m---[m
+ 9 files changed, 176 insertions(+), 22 deletions(-)

@@ -258,7 +258,7 @@ export const DashboardView: React.FC = () => {
         <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
           <div className="rounded-xl border border-emerald-200 bg-white p-3"><p className="font-bold text-emerald-900">Verified</p><p className="mt-1 text-emerald-800">{verifiedPhraseCount} bundled Santhali classroom phrases with Ol Chiki and pronunciation metadata.</p></div>
           <div className="rounded-xl border border-sky-200 bg-white p-3"><p className="font-bold text-sky-900">AI-assisted</p><p className="mt-1 text-sky-800">Connected translation may help outside the local pack and must be reviewed before classroom use.</p></div>
-          <div className="rounded-xl border border-amber-200 bg-white p-3"><p className="font-bold text-amber-900">Unavailable</p><p className="mt-1 text-amber-800">Ho and Mundari local phrase packs, scripts, and native audio are not bundled.</p></div>
+          <div className="rounded-xl border border-amber-200 bg-white p-3"><p className="font-bold text-amber-900">Partial local coverage</p><p className="mt-1 text-amber-800">Ho vocabulary and corpus-derived Mundari phrases are bundled. Unsupported phrases and native audio may require connected services.</p></div>
         </div>
       </section>
 

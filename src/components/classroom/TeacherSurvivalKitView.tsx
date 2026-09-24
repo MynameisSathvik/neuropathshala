@@ -98,7 +98,7 @@ export const TeacherSurvivalKitView: React.FC = () => {
           </div>
           <div className="min-w-56 border-l border-emerald-200/20 pl-4 lg:max-w-xs">
             <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.14em] text-amber-300"><WifiOff className="w-4 h-4" /> Offline core</div>
-            <p className="mt-2 text-xs leading-relaxed text-emerald-50/75">Santhali verified phrases remain available on this device. Ho and Mundari require a connected language service.</p>
+            <p className="mt-2 text-xs leading-relaxed text-emerald-50/75">Santhali, Ho, and supported Mundari phrases remain available on this device. Unsupported phrases may use a connected language service.</p>
           </div>
         </div>
       </section>

@@ -114,9 +114,9 @@ export const TRIBAL_LANGUAGE_PROFILES: Record<TribalLanguage, TribalLanguageProf
     code: 'unr',
     script: 'No bundled script representation',
     scripts: [],
-    scriptNote: 'A local Mundari grammar reference is bundled; lexical translation is not claimed without verified entries.',
-    resourceLabel: 'Offline grammar core',
-    resourceNote: 'Grammar metadata is available locally; lexical translation remains limited.'
+    scriptNote: 'Verified Hindi-Mundari corpus phrases are bundled for local lookup; no neural model is claimed.',
+    resourceLabel: 'Offline translation core',
+    resourceNote: 'Corpus-derived classroom phrases are available locally; unsupported phrases remain unavailable.'
   }
 };
 
@@ -138,7 +138,7 @@ export const TRIBAL_LANGUAGE_STATUS: Record<TribalLanguage, {
   Mundari: {
     local: true,
     label: 'Offline core',
-    note: 'Local grammar core is loaded; lexical translation remains limited until verified'
+    note: 'Corpus-derived classroom phrases are available locally; unsupported phrases remain unavailable'
   }
 };
 

@@ -16,6 +16,7 @@ import {
   normalizePhrase
 } from '../data/dictionary';
 import { getLanguageResource } from '../data/languageResources';
+import { MUNDARI_OFFLINE_CORE } from '../data/offlineLanguageCores';
 import { LanguageResourceItem } from '../types';
 import { apiFetch } from './apiClient';
 
@@ -46,6 +47,7 @@ export interface TranslationResult {
   source?: string;
   script?: string;
   audioUrl?: string;
+  alternatives?: string[];
 }
 
 export interface TranslationProvider {
@@ -206,6 +208,27 @@ class LocalDictionaryTranslationProvider implements TranslationProvider {
     }
 
     if (fromLang === 'hi' && toLang !== 'hi') {
+      if (toLang === 'unr') {
+        const translations = MUNDARI_OFFLINE_CORE.corpus.lookup[norm] || [];
+        if (translations.length > 0) {
+          const matchedEntry = resource.classroomPhrases.find((item) => normalizePhrase(item.hindi) === norm && item.translation === translations[0]);
+          return {
+            found: true,
+            sourceText,
+            translatedText: translations[0],
+            alternatives: translations.slice(1),
+            sourceLanguage: 'hi',
+            targetLanguage: 'unr',
+            isVerified: true,
+            statusNote: 'Verified corpus-derived Mundari offline translation',
+            matchedEntry,
+            provider: this.name,
+            verificationStatus: 'verified',
+            source: 'Karya Hindi-Mundari Translation Dataset'
+          };
+        }
+      }
+
       const entry = resource.classroomPhrases.find((item) => normalizePhrase(item.hindi) === norm);
       if (entry) {
         return {
@@ -241,6 +264,27 @@ class LocalDictionaryTranslationProvider implements TranslationProvider {
     }
 
     if (toLang === 'hi' && fromLang !== 'sat') {
+      if (fromLang === 'unr') {
+        const entries = resource.classroomPhrases.filter((item) =>
+          normalizePhrase(item.translation) === norm
+        );
+        if (entries.length > 0) {
+          return {
+            found: true,
+            sourceText,
+            translatedText: entries[0].hindi,
+            alternatives: entries.slice(1).map((entry) => entry.hindi),
+            sourceLanguage: 'unr',
+            targetLanguage: 'hi',
+            isVerified: true,
+            statusNote: 'Verified corpus-derived Mundari offline translation',
+            provider: this.name,
+            verificationStatus: 'verified',
+            source: 'Karya Hindi-Mundari Translation Dataset'
+          };
+        }
+      }
+
       const entry = resource.classroomPhrases.find((item) =>
         normalizePhrase(item.translation) === norm ||
         (item.pronunciation && normalizePhrase(item.pronunciation) === norm)

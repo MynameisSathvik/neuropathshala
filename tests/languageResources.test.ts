@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { LANGUAGE_RESOURCES } from '../src/data/languageResources';
 import { importLanguagePack, validateLanguagePack } from '../src/data/languagePack';
 import { findResourceIdByHindi, resolveResourceReference } from '../src/data/resourceAdapters';
-import { translateText } from '../src/services/translationService';
+import { translateText, translateTextWithBackend } from '../src/services/translationService';
 import { toLiveClassPhrase } from '../src/data/resourceAdapters';
 import { isAudioAvailable } from '../src/services/audioService';
 
@@ -20,7 +20,7 @@ test('bundled resource IDs are unique and verified entries have provenance', () 
     assert.ok(entry.tribalText || entry.translation);
     assert.ok(entry.source.name);
     assert.ok(entry.source.reference);
-    assert.ok(['Santhali', 'Ho'].includes(entry.language));
+    assert.ok(['Santhali', 'Ho', 'Mundari'].includes(entry.language));
   }
 });
 
@@ -30,7 +30,8 @@ test('bundled language cores expose truthful local capability', () => {
   assert.ok(santhali.classroomPhrases.every((entry) => entry.script && /[\u1c50-\u1c7f]/u.test(entry.script)));
   assert.ok(LANGUAGE_RESOURCES.Ho.classroomPhrases.length > 0);
   assert.ok(LANGUAGE_RESOURCES.Ho.classroomPhrases.every((entry) => entry.source.reference.includes('659748601-ho-hindi-dictionary.pdf')));
-  assert.equal(LANGUAGE_RESOURCES.Mundari.classroomPhrases.length, 0);
+  assert.ok(LANGUAGE_RESOURCES.Mundari.classroomPhrases.length > 0);
+  assert.ok(LANGUAGE_RESOURCES.Mundari.classroomPhrases.every((entry) => entry.source.name === 'Karya Hindi-Mundari Translation Dataset'));
   assert.equal(LANGUAGE_RESOURCES.Santhali.offlineAvailable, true);
   assert.equal(LANGUAGE_RESOURCES.Ho.offlineAvailable, true);
   assert.equal(LANGUAGE_RESOURCES.Mundari.offlineAvailable, true);
@@ -62,11 +63,65 @@ test('Ho vocabulary translates locally in both directions', () => {
   assert.equal(toHindi.translatedText, 'पानी');
 });
 
-test('Mundari grammar core does not invent lexical translations', () => {
-  const result = translateText('पानी', 'hi', 'unr');
-  assert.equal(result.found, false);
-  assert.equal(result.verificationStatus, 'unavailable');
-  assert.match(result.statusNote, /offline core has no verified entry/i);
+test('Mundari corpus supports exact and normalized Hindi lookup', () => {
+  const exact = translateText('आप का क्या ख्याल है', 'hi', 'unr');
+  assert.equal(exact.found, true);
+  assert.equal(exact.translatedText, 'अमा: चिकन ख्याल मेना:');
+  assert.equal(exact.verificationStatus, 'verified');
+
+  const normalized = translateText('  आप का क्या ख्याल है?  ', 'hi', 'unr');
+  assert.equal(normalized.found, true);
+  assert.equal(normalized.translatedText, exact.translatedText);
+});
+
+test('Mundari corpus preserves multiple possible translations', () => {
+  const result = translateText('आप का क्या ख्याल है', 'hi', 'unr');
+  assert.deepEqual(result.alternatives, ['अमा: चिलका उड़ु: मेना:।']);
+});
+
+test('Mundari unknown and empty input remain honest', () => {
+  const unknown = translateText('यह वाक्य स्थानीय पैक में नहीं है', 'hi', 'unr');
+  assert.equal(unknown.found, false);
+  assert.equal(unknown.verificationStatus, 'unavailable');
+  assert.match(unknown.statusNote, /offline core has no verified entry/i);
+
+  const empty = translateText('   ', 'hi', 'unr');
+  assert.equal(empty.found, false);
+  assert.equal(empty.translatedText, '');
+  assert.equal(empty.statusNote, 'Empty input.');
+});
+
+test('Mundari offline mode does not call the network', async () => {
+  const originalFetch = globalThis.fetch;
+  let fetchCalls = 0;
+  globalThis.fetch = (async () => {
+    fetchCalls += 1;
+    throw new Error('network should not be called');
+  }) as typeof fetch;
+
+  const originalNavigator = globalThis.navigator;
+  Object.defineProperty(globalThis, 'navigator', {
+    configurable: true,
+    value: { onLine: false }
+  });
+
+  try {
+    const result = await translateTextWithBackend('आप का क्या ख्याल है', 'hi', 'unr');
+    assert.equal(result.found, true);
+    assert.equal(result.translatedText, 'अमा: चिकन ख्याल मेना:');
+    assert.equal(fetchCalls, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+    Object.defineProperty(globalThis, 'navigator', {
+      configurable: true,
+      value: originalNavigator
+    });
+  }
+});
+
+test('existing Santali and Ho local translations remain available', () => {
+  assert.equal(translateText('किताब खोलो', 'hi', 'sat').found, true);
+  assert.equal(translateText('पानी', 'hi', 'ho').translatedText, 'दः');
 });
 
 test('language-pack importer rejects missing provenance, duplicates, and fake audio', () => {
