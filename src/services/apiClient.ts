@@ -1,7 +1,11 @@
 export function apiUrl(path: string): string {
   const baseUrl = import.meta.env?.VITE_API_BASE_URL?.trim();
   if (baseUrl) {
-    return `${baseUrl.replace(/\/$/, '')}/${path.replace(/^\//, '')}`;
+    const normalizedBaseUrl = baseUrl.replace(/\/$/, '');
+    const apiBaseUrl = normalizedBaseUrl.endsWith('/api')
+      ? normalizedBaseUrl
+      : `${normalizedBaseUrl}/api`;
+    return `${apiBaseUrl}/${path.replace(/^\//, '')}`;
   }
   return `/api/${path.replace(/^\//, '')}`;
 }
