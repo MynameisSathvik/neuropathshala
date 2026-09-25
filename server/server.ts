@@ -8,8 +8,11 @@ dotenv.config();
 const app = express();
 
 const allowedOrigins = new Set(
-  (process.env.ALLOWED_ORIGINS || "http://localhost:3000")
-    .split(",")
+  [
+    "http://localhost:3000",
+    "http://localhost:5173",
+    ...(process.env.ALLOWED_ORIGINS || "").split(",")
+  ]
     .map((origin) => origin.trim())
     .filter(Boolean)
 );
@@ -216,12 +219,19 @@ function displayLanguageName(language: string): string {
 }
 
 app.post("/api/translate", async (req, res) => {
+  const startedAt = Date.now();
+  let provider = "unknown";
+  let sourceLanguage = "unknown";
+  let targetLanguage = "unknown";
+
   try {
     const {
       text,
-      sourceLanguage,
-      targetLanguage
+      sourceLanguage: requestedSourceLanguage,
+      targetLanguage: requestedTargetLanguage
     } = req.body;
+    sourceLanguage = requestedSourceLanguage;
+    targetLanguage = requestedTargetLanguage;
 
     const allowedLanguages = new Set(["Hindi", "Santhali", "Ho", "Mundari", "hi", "sat", "ho", "unr", "hi-IN", "sat-IN", "ho-IN", "unr-IN"]);
     if (
@@ -243,7 +253,8 @@ app.post("/api/translate", async (req, res) => {
     // Ho and Mundari are routed through the configured AI model because the
     // installed Sarvam SDK currently exposes Hindi and Santhali translation codes only.
     if (sourceName === "Ho" || sourceName === "Mundari" || targetName === "Ho" || targetName === "Mundari") {
-      const response = await gemini.models.generateContent({
+      provider = "Gemini";
+      const response = await requireProvider(gemini, "Gemini").models.generateContent({
         model: "gemini-3.6-flash",
         contents: `Translate this primary-school FLN classroom phrase from ${sourceName} to ${targetName}. Preserve the meaning and return only the translation. If the language is unsupported, return UNSUPPORTED. Text: ${text}`
       });
@@ -263,8 +274,9 @@ app.post("/api/translate", async (req, res) => {
       });
     }
 
+    provider = "Sarvam";
     const response =
-      await sarvam.text.translate({
+      await requireProvider(sarvam, "Sarvam").text.translate({
         input: text,
 
         source_language_code: toSarvamLanguageCode(sourceLanguage),
@@ -283,16 +295,31 @@ app.post("/api/translate", async (req, res) => {
     });
 
   } catch (error) {
-    console.error(
-      "Translation error:",
-      error
-    );
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const duration = Date.now() - startedAt;
+    console.error("[translate] provider failure", {
+      provider,
+      sourceLanguage,
+      targetLanguage,
+      error: errorMessage,
+      duration
+    });
 
     res.status(500).json({
       success: false,
-      error: "Sarvam translation failed"
+      error: "Translation service unavailable",
+      provider
     });
+  } finally {
+    console.log(`[translate] ${sourceLanguage} -> ${targetLanguage}: ${Date.now() - startedAt}ms`);
   }
+});
+
+app.get("/api/health", (_req, res) => {
+  res.json({
+    success: true,
+    service: "neuropathshala-backend"
+  });
 });
 
 /* =========================
@@ -1115,8 +1142,10 @@ Return exactly:
    START SERVER
 ========================= */
 
-app.listen(3001, () => {
+const PORT = Number(process.env.PORT) || 3001;
+
+app.listen(PORT, "0.0.0.0", () => {
   console.log(
-    "🚀 NeuroPathshala backend running on http://localhost:3001"
+    `NeuroPathshala backend running on port ${PORT}`
   );
 });

@@ -146,7 +146,7 @@ class LocalDictionaryTranslationProvider implements TranslationProvider {
 
     // Hindi → Santali
     if (fromLang === 'hi' && toLang === 'sat') {
-      // 1. Exact dictionary match
+      // 1. Exact verified phrase match.
       for (const entry of resource.classroomPhrases) {
         if (normalizePhrase(entry.hindi) === norm) {
           return {
@@ -159,8 +159,8 @@ class LocalDictionaryTranslationProvider implements TranslationProvider {
             targetLanguage: 'sat',
             isVerified: entry.verificationStatus === 'verified',
             statusNote: entry.verificationStatus === 'verified'
-              ? 'Verified PALASH MTB-MLE classroom vocabulary'
-              : 'Sample translation — verify with native speaker',
+              ? 'Translated using the verified offline Santali phrase pack.'
+              : 'Sample translation — verify with a native speaker',
             matchedEntry: entry,
             provider: this.name,
             verificationStatus: entry.verificationStatus,
@@ -170,28 +170,30 @@ class LocalDictionaryTranslationProvider implements TranslationProvider {
         }
       }
 
-      // 2. Partial dictionary match
-      for (const entry of resource.classroomPhrases) {
-        const entryNorm = normalizePhrase(entry.hindi);
-
-        if (norm.includes(entryNorm) && entryNorm.length > 3) {
-          return {
-            found: true,
-            sourceText,
-            translatedText: `${entry.translation}${entry.pronunciation ? ` (${entry.pronunciation})` : ''}`,
-            olChiki: entry.script,
-            phonetic: entry.pronunciation,
-            sourceLanguage: 'hi',
-            targetLanguage: 'sat',
-            isVerified: false,
-            statusNote: 'Sample translation — verify with native speaker',
-            matchedEntry: entry,
-            provider: this.name,
-            verificationStatus: 'demo',
-            source: resource.source.name,
-            script: entry.script
-          };
-        }
+      // 2. Compose only verified single-word entries already present in the pack.
+      const words = norm.split(' ');
+      const verifiedWords = resource.classroomPhrases
+        .filter((entry) => entry.verificationStatus === 'verified' && normalizePhrase(entry.hindi).split(' ').length === 1)
+        .map((entry) => ({
+          hindi: normalizePhrase(entry.hindi),
+          santhali: entry.translation,
+          phonetic: entry.pronunciation || ''
+        }));
+      const composedWords = words.map((word) => verifiedWords.find((entry) => entry.hindi === word));
+      if (composedWords.every(Boolean)) {
+        return {
+          found: true,
+          sourceText,
+          translatedText: composedWords.map((entry) => entry!.santhali).join(' '),
+          phonetic: composedWords.map((entry) => entry!.phonetic).join(' '),
+          sourceLanguage: 'hi',
+          targetLanguage: 'sat',
+          isVerified: true,
+          statusNote: 'Translated using the verified offline Santali phrase pack.',
+          provider: this.name,
+          verificationStatus: 'verified',
+          source: resource.source.name
+        };
       }
 
       return {
@@ -201,8 +203,7 @@ class LocalDictionaryTranslationProvider implements TranslationProvider {
         sourceLanguage: 'hi',
         targetLanguage: 'sat',
         isVerified: false,
-        statusNote:
-          'Translation unavailable for this phrase in the local language pack.',
+        statusNote: 'This phrase is not available in the verified offline vocabulary yet.',
         provider: this.name
       };
     }
@@ -460,11 +461,13 @@ export async function translateTextWithBackend(
 
   const localResult = translateText(sourceText, sourceLanguage, targetLanguage);
 
-  if (typeof navigator !== 'undefined' && !navigator.onLine) {
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
     if (localResult.found) return localResult;
     return {
       ...localResult,
-      statusNote: 'Connected service unavailable. No verified local resource is available for this phrase.',
+      statusNote: toLang === 'sat' || fromLang === 'sat'
+        ? 'This phrase is not available in the verified offline vocabulary yet.'
+        : 'Connected service unavailable. No verified local resource is available for this phrase.',
       verificationStatus: 'unavailable'
     };
   }
@@ -475,12 +478,16 @@ export async function translateTextWithBackend(
     return localResult;
   }
 
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 3000);
+
   try {
     const response = await apiFetch('translate', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
       },
+      signal: controller.signal,
       body: JSON.stringify({
         text: sourceText,
         sourceLanguage: languageDisplayName(fromLang),
@@ -512,6 +519,8 @@ export async function translateTextWithBackend(
       provider: data.provider || 'Sarvam'
     };
   } catch (error) {
+    const timedOut = typeof error === 'object' && error !== null && 'name' in error && error.name === 'AbortError';
+
     console.warn(
       'Backend translation unavailable. Falling back to local dictionary.',
       error
@@ -519,10 +528,16 @@ export async function translateTextWithBackend(
 
     return {
       ...localResult,
-      statusNote: localResult.found
+      statusNote: timedOut
+        ? 'Online translation is taking too long. Try a supported offline classroom phrase.'
+        : localResult.found
         ? localResult.statusNote
-        : 'Connected service unavailable. No verified local resource is available for this phrase.',
+        : toLang === 'sat' || fromLang === 'sat'
+          ? 'Online translation service is unavailable. No verified offline translation exists for this phrase.'
+          : 'Connected service unavailable. No verified local resource is available for this phrase.',
       verificationStatus: localResult.found ? localResult.verificationStatus : 'unavailable'
     };
+  } finally {
+    clearTimeout(timeout);
   }
 }

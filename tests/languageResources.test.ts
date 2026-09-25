@@ -6,6 +6,7 @@ import { findResourceIdByHindi, resolveResourceReference } from '../src/data/res
 import { translateText, translateTextWithBackend } from '../src/services/translationService';
 import { toLiveClassPhrase } from '../src/data/resourceAdapters';
 import { isAudioAvailable } from '../src/services/audioService';
+import { apiUrl } from '../src/services/apiClient';
 
 test('bundled resource IDs are unique and verified entries have provenance', () => {
   const entries = Object.values(LANGUAGE_RESOURCES).flatMap((resource) => resource.classroomPhrases);
@@ -50,6 +51,78 @@ test('resource references resolve consistently for shared consumers', () => {
 test('offline local lookup does not claim unknown remote translation succeeded', () => {
   const result = translateText('यह वाक्य स्थानीय पैक में नहीं है', 'hi', 'sat');
   assert.equal(result.found, false);
+  assert.equal(result.statusNote, 'This phrase is not available in the verified offline vocabulary yet.');
+});
+
+test('Santali exact and normalized phrase lookup stays verified and local', () => {
+  const exact = translateText('किताब खोलो', 'hi', 'sat');
+  assert.equal(exact.found, true);
+  assert.equal(exact.translatedText, 'ᱯᱩᱛᱷᱤ ᱡᱷᱤᱡᱽ ᱯᱮ (Puthi jhij pe)');
+  assert.equal(exact.statusNote, 'Translated using the verified offline Santali phrase pack.');
+
+  const normalized = translateText('  किताब खोलो।  ', 'hi', 'sat');
+  assert.equal(normalized.found, true);
+  assert.equal(normalized.translatedText, exact.translatedText);
+});
+
+test('Santali composes only verified single-word entries', () => {
+  const result = translateText('पानी पेड़', 'hi', 'sat');
+  assert.equal(result.found, true);
+  assert.equal(result.translatedText, 'ᱫᱟᱜ ᱫᱟᱨᱮ');
+  assert.equal(result.verificationStatus, 'verified');
+  assert.equal(result.statusNote, 'Translated using the verified offline Santali phrase pack.');
+
+  const unsupported = translateText('प्रशासनिक भाषा का सरलीकरण', 'hi', 'sat');
+  assert.equal(unsupported.found, false);
+  assert.equal(unsupported.translatedText, '');
+  assert.equal(unsupported.statusNote, 'This phrase is not available in the verified offline vocabulary yet.');
+});
+
+test('Santali offline mode does not call the network for a supported phrase', async () => {
+  const originalFetch = globalThis.fetch;
+  let fetchCalls = 0;
+  globalThis.fetch = (async () => {
+    fetchCalls += 1;
+    throw new Error('network should not be called');
+  }) as typeof fetch;
+
+  const originalNavigator = globalThis.navigator;
+  Object.defineProperty(globalThis, 'navigator', {
+    configurable: true,
+    value: { onLine: false }
+  });
+
+  try {
+    const result = await translateTextWithBackend('किताब खोलो', 'hi', 'sat');
+    assert.equal(result.found, true);
+    assert.equal(result.verificationStatus, 'verified');
+    assert.equal(fetchCalls, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+    Object.defineProperty(globalThis, 'navigator', {
+      configurable: true,
+      value: originalNavigator
+    });
+  }
+});
+
+test('Santali offline mode reports unsupported phrases honestly', async () => {
+  const originalNavigator = globalThis.navigator;
+  Object.defineProperty(globalThis, 'navigator', {
+    configurable: true,
+    value: { onLine: false }
+  });
+
+  try {
+    const result = await translateTextWithBackend('प्रशासनिक भाषा का सरलीकरण', 'hi', 'sat');
+    assert.equal(result.found, false);
+    assert.equal(result.statusNote, 'This phrase is not available in the verified offline vocabulary yet.');
+  } finally {
+    Object.defineProperty(globalThis, 'navigator', {
+      configurable: true,
+      value: originalNavigator
+    });
+  }
 });
 
 test('Ho vocabulary translates locally in both directions', () => {
@@ -122,6 +195,98 @@ test('Mundari offline mode does not call the network', async () => {
 test('existing Santali and Ho local translations remain available', () => {
   assert.equal(translateText('किताब खोलो', 'hi', 'sat').found, true);
   assert.equal(translateText('पानी', 'hi', 'ho').translatedText, 'दः');
+});
+
+test('required verified phrases never call the backend', async () => {
+  const originalFetch = globalThis.fetch;
+  let fetchCalls = 0;
+  globalThis.fetch = (async () => {
+    fetchCalls += 1;
+    throw new Error('verified local translation should not call the backend');
+  }) as typeof fetch;
+
+  try {
+    for (const [text, targetLanguage] of [
+      ['किताब खोलो', 'sat'],
+      ['पानी', 'ho'],
+      ['आप का क्या ख्याल है', 'unr']
+    ] as const) {
+      const result = await translateTextWithBackend(text, 'hi', targetLanguage);
+      assert.equal(result.found, true);
+      assert.equal(result.verificationStatus, 'verified');
+    }
+    assert.equal(fetchCalls, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('online translation posts to the configured API path', async () => {
+  const originalFetch = globalThis.fetch;
+  const originalNavigator = globalThis.navigator;
+  let requestedUrl = '';
+  let requestedInit: RequestInit | undefined;
+  Object.defineProperty(globalThis, 'navigator', {
+    configurable: true,
+    value: { onLine: true }
+  });
+  globalThis.fetch = (async (input, init) => {
+    requestedUrl = String(input);
+    requestedInit = init;
+    return new Response(JSON.stringify({
+      success: true,
+      translatedText: 'connected result',
+      provider: 'Gemini'
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  }) as typeof fetch;
+
+  try {
+    const result = await translateTextWithBackend('अज्ञात वाक्य', 'hi', 'ho');
+    assert.equal(result.translatedText, 'connected result');
+    assert.equal(requestedUrl, apiUrl('translate'));
+    assert.equal((requestedInit?.signal as AbortSignal).aborted, false);
+    assert.deepEqual(JSON.parse(String(requestedInit?.body)), {
+      text: 'अज्ञात वाक्य',
+      sourceLanguage: 'Hindi',
+      targetLanguage: 'Ho'
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+    Object.defineProperty(globalThis, 'navigator', {
+      configurable: true,
+      value: originalNavigator
+    });
+  }
+});
+
+test('online translation aborts after three seconds without fabricating output', async () => {
+  const originalFetch = globalThis.fetch;
+  const originalNavigator = globalThis.navigator;
+  Object.defineProperty(globalThis, 'navigator', {
+    configurable: true,
+    value: { onLine: true }
+  });
+  globalThis.fetch = ((_, init) => new Promise<Response>((_resolve, reject) => {
+    init?.signal?.addEventListener('abort', () => {
+      reject(Object.assign(new Error('aborted'), { name: 'AbortError' }));
+    });
+  })) as typeof fetch;
+
+  try {
+    const startedAt = Date.now();
+    const result = await translateTextWithBackend('अज्ञात वाक्य', 'hi', 'ho');
+    const elapsed = Date.now() - startedAt;
+    assert.ok(elapsed >= 2900 && elapsed < 3800, `timeout elapsed ${elapsed}ms`);
+    assert.equal(result.found, false);
+    assert.equal(result.translatedText, '');
+    assert.equal(result.statusNote, 'Online translation is taking too long. Try a supported offline classroom phrase.');
+  } finally {
+    globalThis.fetch = originalFetch;
+    Object.defineProperty(globalThis, 'navigator', {
+      configurable: true,
+      value: originalNavigator
+    });
+  }
 });
 
 test('language-pack importer rejects missing provenance, duplicates, and fake audio', () => {

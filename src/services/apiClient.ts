@@ -1,8 +1,5 @@
 export function apiUrl(path: string): string {
-  const runtimeImportMeta = import.meta as ImportMeta & {
-    env?: { VITE_API_BASE_URL?: string };
-  };
-  const baseUrl = runtimeImportMeta.env?.VITE_API_BASE_URL?.trim();
+  const baseUrl = import.meta.env?.VITE_API_BASE_URL?.trim();
   if (baseUrl) {
     return `${baseUrl.replace(/\/$/, '')}/${path.replace(/^\//, '')}`;
   }
