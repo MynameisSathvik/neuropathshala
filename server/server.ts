@@ -9,6 +9,7 @@ const app = express();
 
 const allowedOrigins = new Set(
   [
+    "https://neuropathshala.vercel.app",
     "http://localhost:3000",
     "http://localhost:5173",
     ...(process.env.ALLOWED_ORIGINS || "").split(",")
