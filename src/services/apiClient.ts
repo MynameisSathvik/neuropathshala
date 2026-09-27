@@ -1,64 +1,75 @@
-const API_TIMEOUT_MS = 20_000;
-const API_RETRY_DELAYS_MS = [800];
+const REQUEST_TIMEOUT_MS = 15_000;
+const WARMUP_TIMEOUT_MS = 60_000;
 
-function isRetryableStatus(status: number): boolean {
-  return status === 408 || status === 425 || status === 429 || status >= 500;
-}
-
-function isNetworkError(error: unknown): boolean {
-  return error instanceof TypeError || /network|fetch|timeout|abort/i.test(String(error));
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function getBaseUrl(): string {
+  const baseUrl = import.meta.env?.VITE_API_BASE_URL?.trim();
+  return baseUrl ? baseUrl.replace(/\/$/, "") : "";
 }
 
 export function apiUrl(path: string): string {
-  const baseUrl = import.meta.env.VITE_API_BASE_URL?.trim();
+  const baseUrl = getBaseUrl();
+
   if (baseUrl) {
-    const normalizedBaseUrl = baseUrl.replace(/\/$/, '');
-    const apiBaseUrl = normalizedBaseUrl.endsWith('/api')
-      ? normalizedBaseUrl
-      : `${normalizedBaseUrl}/api`;
-    return `${apiBaseUrl}/${path.replace(/^\//, '')}`;
+    const apiBaseUrl = baseUrl.endsWith("/api")
+      ? baseUrl
+      : `${baseUrl}/api`;
+
+    return `${apiBaseUrl}/${path.replace(/^\//, "")}`;
   }
-  return `/api/${path.replace(/^\//, '')}`;
+
+  return `/api/${path.replace(/^\//, "")}`;
 }
 
-export async function apiFetch(
-  path: string,
-  options?: RequestInit
-): Promise<Response> {
-  const delays = [0, ...API_RETRY_DELAYS_MS];
+function withTimeout(options: RequestInit = {}, timeoutMs = REQUEST_TIMEOUT_MS): RequestInit {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
 
-  for (let attempt = 0; attempt < delays.length; attempt += 1) {
-    if (delays[attempt] > 0) {
-      await sleep(delays[attempt]);
-    }
+  return {
+    ...options,
+    signal: controller.signal,
+  };
+}
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+/**
+ * Wake the Render backend in the background as soon as the frontend loads.
+ *
+ * This is deliberately fire-and-forget:
+ * - it must never block the UI;
+ * - it does not consume Sarvam/Gemini credits;
+ * - it gives Render time to wake before the evaluator reaches Translator.
+ */
+export function warmupApi(): void {
+  if (typeof window === "undefined") return;
 
-    try {
-      const response = await fetch(apiUrl(path), {
-        ...options,
-        signal: controller.signal
-      });
+  const baseUrl = getBaseUrl();
+  if (!baseUrl) return;
 
-      if (!isRetryableStatus(response.status) || attempt === delays.length - 1) {
-        return response;
-      }
+  const key = "__neuropathshala_api_warmup_started__";
+  if (window.sessionStorage.getItem(key) === "1") return;
 
-      // Do not immediately surface a transient 429/5xx from Render/provider.
-      continue;
-    } catch (error) {
-      if (!isNetworkError(error) || attempt === delays.length - 1) {
-        throw error;
-      }
-    } finally {
-      clearTimeout(timeout);
-    }
-  }
+  window.sessionStorage.setItem(key, "1");
 
-  throw new Error("API request failed after retry");
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), WARMUP_TIMEOUT_MS);
+
+  fetch(`${apiUrl("health")}`, {
+    method: "GET",
+    headers: { Accept: "application/json" },
+    signal: controller.signal,
+    cache: "no-store",
+  })
+    .catch(() => {
+      // Warm-up is best effort. The app remains usable offline/local-first.
+    })
+    .finally(() => {
+      window.clearTimeout(timeout);
+    });
+}
+
+// Start the backend wake-up immediately when this module is loaded.
+// This happens without blocking rendering or translation.
+warmupApi();
+
+export function apiFetch(path: string, options?: RequestInit): Promise<Response> {
+  return fetch(apiUrl(path), withTimeout(options));
 }
