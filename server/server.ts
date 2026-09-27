@@ -118,6 +118,86 @@ function requireProvider<T>(provider: T | null, name: string): T {
 }
 
 /* =========================
+   PROVIDER RETRY / RESILIENCE
+========================= */
+
+function getProviderStatus(error: unknown): number | undefined {
+  if (!error || typeof error !== "object") return undefined;
+
+  const candidate = error as {
+    status?: unknown;
+    statusCode?: unknown;
+    response?: { status?: unknown };
+    cause?: { status?: unknown; statusCode?: unknown };
+  };
+
+  const values = [
+    candidate.status,
+    candidate.statusCode,
+    candidate.response?.status,
+    candidate.cause?.status,
+    candidate.cause?.statusCode
+  ];
+
+  for (const value of values) {
+    if (typeof value === "number" && Number.isInteger(value)) {
+      return value;
+    }
+  }
+
+  return undefined;
+}
+
+function isRetryableProviderError(error: unknown): boolean {
+  const status = getProviderStatus(error);
+
+  if (status !== undefined) {
+    return [408, 425, 429, 500, 502, 503, 504].includes(status);
+  }
+
+  const message = error instanceof Error ? error.message : String(error);
+
+  return /timeout|timed out|temporar|overload|resource exhausted|rate limit|too many requests|fetch failed|ECONNRESET|ECONNREFUSED|ETIMEDOUT|503/i.test(
+    message
+  );
+}
+
+function getRetryDelayMs(attempt: number): number {
+  // 600ms, 1200ms, 2400ms + small jitter.
+  return 600 * 2 ** attempt + Math.floor(Math.random() * 250);
+}
+
+async function withProviderRetry<T>(
+  operation: () => Promise<T>,
+  providerName: string,
+  maxAttempts = 3
+): Promise<T> {
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      return await operation();
+    } catch (error) {
+      const retryable = isRetryableProviderError(error);
+
+      if (!retryable || attempt === maxAttempts) {
+        throw error;
+      }
+
+      const delay = getRetryDelayMs(attempt - 1);
+      const status = getProviderStatus(error);
+
+      console.warn(
+        `[provider-retry] ${providerName} attempt ${attempt}/${maxAttempts} failed` +
+          `${status ? ` (HTTP ${status})` : ""}; retrying in ${delay}ms`
+      );
+
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+
+  throw new Error(`${providerName} request failed after retries`);
+}
+
+/* =========================
    NVIDIA NIM HELPER
 ========================= */
 
@@ -255,10 +335,14 @@ app.post("/api/translate", async (req, res) => {
     // installed Sarvam SDK currently exposes Hindi and Santhali translation codes only.
     if (sourceName === "Ho" || sourceName === "Mundari" || targetName === "Ho" || targetName === "Mundari") {
       provider = "Gemini";
-      const response = await requireProvider(gemini, "Gemini").models.generateContent({
-        model: "gemini-3.6-flash",
-        contents: `Translate this primary-school FLN classroom phrase from ${sourceName} to ${targetName}. Preserve the meaning and return only the translation. If the language is unsupported, return UNSUPPORTED. Text: ${text}`
-      });
+      const response = await withProviderRetry(
+        () =>
+          requireProvider(gemini, "Gemini").models.generateContent({
+            model: "gemini-3.6-flash",
+            contents: `Translate this primary-school FLN classroom phrase from ${sourceName} to ${targetName}. Preserve the meaning and return only the translation. If the language is unsupported, return UNSUPPORTED. Text: ${text}`
+          }),
+        "Gemini translation"
+      );
       const translatedText = response.text?.trim();
 
       if (!translatedText || translatedText === "UNSUPPORTED") {
@@ -276,15 +360,18 @@ app.post("/api/translate", async (req, res) => {
     }
 
     provider = "Sarvam";
-    const response =
-      await requireProvider(sarvam, "Sarvam").text.translate({
-        input: text,
+    const response = await withProviderRetry(
+      () =>
+        requireProvider(sarvam, "Sarvam").text.translate({
+          input: text,
 
-        source_language_code: toSarvamLanguageCode(sourceLanguage),
-        target_language_code: toSarvamLanguageCode(targetLanguage),
+          source_language_code: toSarvamLanguageCode(sourceLanguage),
+          target_language_code: toSarvamLanguageCode(targetLanguage),
 
-        model: "sarvam-translate:v1"
-      });
+          model: "sarvam-translate:v1"
+        }),
+      "Sarvam translation"
+    );
 
     res.json({
       success: true,
@@ -306,10 +393,24 @@ app.post("/api/translate", async (req, res) => {
       duration
     });
 
-    res.status(500).json({
+    const status = getProviderStatus(error);
+    const responseStatus =
+      status === 429
+        ? 429
+        : status !== undefined && status >= 500 && status <= 599
+          ? 503
+          : 500;
+
+    res.status(responseStatus).json({
       success: false,
-      error: "Translation service unavailable",
-      provider
+      error:
+        responseStatus === 429
+          ? "Translation provider is rate-limited. Please retry shortly."
+          : responseStatus === 503
+            ? "Translation provider is temporarily unavailable. Please retry."
+            : "Translation service unavailable",
+      provider,
+      retryable: responseStatus === 429 || responseStatus === 503
     });
   } finally {
     console.log(`[translate] ${sourceLanguage} -> ${targetLanguage}: ${Date.now() - startedAt}ms`);
